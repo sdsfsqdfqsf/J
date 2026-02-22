@@ -1,0 +1,1397 @@
+--[[
+╔══════════════════════════════════════════════════════════════════╗
+║            BF ULTIMATE HUB - FINAL CLEAN VERSION               ║
+║  Data sourced from SkyX Hub (real CFrames, real remotes)       ║
+║  REMOVED: Discord webhook logger (was logging your info)       ║
+║  KEPT: AntiBan, real mob magnet, workspace.Enemies,            ║
+║         requestEntrance, all 3 seas, Fluent UI, real quests    ║
+╚══════════════════════════════════════════════════════════════════╝
+--]]
+
+-- ═══════════════════════════════════════════════════════════════
+--  SERVICES
+-- ═══════════════════════════════════════════════════════════════
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local VIM          = game:GetService("VirtualInputManager")
+local VirtualUser  = game:GetService("VirtualUser")
+local Lighting     = game:GetService("Lighting")
+local RS           = game:GetService("ReplicatedStorage")
+local LP           = Players.LocalPlayer
+local Camera       = workspace.CurrentCamera
+
+-- ═══════════════════════════════════════════════════════════════
+--  SEA DETECTION  (from SkyX — PlaceId method)
+-- ═══════════════════════════════════════════════════════════════
+local id         = game.PlaceId
+local First_Sea  = (id == 2753915549)
+local Second_Sea = (id == 4442272183)
+local Third_Sea  = (id == 7449423635)
+local seaName    = First_Sea  and "First Sea"
+                or Second_Sea and "Second Sea"
+                or Third_Sea  and "Third Sea"
+                or "Unknown Sea"
+
+-- ═══════════════════════════════════════════════════════════════
+--  SAFE WRAPPER
+-- ═══════════════════════════════════════════════════════════════
+local function safe(fn, ...)
+    local ok, err = pcall(fn, ...)
+    if not ok then warn("[BFHub] " .. tostring(err)) end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  ANTI BAN  (from SkyX — destroys detection LocalScripts)
+-- ═══════════════════════════════════════════════════════════════
+local function AntiBan()
+    safe(function()
+        for _, v in pairs(LP.Character:GetDescendants()) do
+            if v:IsA("LocalScript") then
+                local n = v.Name
+                if n=="General"  or n=="Shiftlock" or n=="FallDamage"
+                or n=="4444"     or n=="CamBob"    or n=="JumpCD"
+                or n=="Looking"  or n=="Run" then
+                    v:Destroy()
+                end
+            end
+        end
+        for _, v in pairs(LP.PlayerScripts:GetDescendants()) do
+            if v:IsA("LocalScript") then
+                local n = v.Name
+                if n=="RobloxMotor6DBugFix" or n=="Clans"
+                or n=="Codes"              or n=="CustomForceField"
+                or n=="MenuBloodSp"        or n=="PlayerList" then
+                    v:Destroy()
+                end
+            end
+        end
+    end)
+end
+AntiBan()
+
+-- ═══════════════════════════════════════════════════════════════
+--  ANTI AFK  (from SkyX)
+-- ═══════════════════════════════════════════════════════════════
+LP.Idled:Connect(function()
+    VirtualUser:Button2Down(Vector2.new(0,0), Camera.CFrame)
+    task.wait(1)
+    VirtualUser:Button2Up(Vector2.new(0,0), Camera.CFrame)
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+--  CHARACTER
+-- ═══════════════════════════════════════════════════════════════
+local Char, Hum, HRP
+
+local function refreshChar()
+    Char = LP.Character
+    if not Char then return false end
+    Hum  = Char:FindFirstChildOfClass("Humanoid")
+    HRP  = Char:FindFirstChild("HumanoidRootPart")
+    return Hum ~= nil and HRP ~= nil
+end
+refreshChar()
+
+-- ═══════════════════════════════════════════════════════════════
+--  COMMF_ REMOTE
+-- ═══════════════════════════════════════════════════════════════
+local CommF_
+local function getCommF()
+    if CommF_ and CommF_.Parent then return CommF_ end
+    local rem = RS:FindFirstChild("Remotes")
+    if not rem then return nil end
+    CommF_ = rem:FindFirstChild("CommF_")
+    return CommF_
+end
+
+local function invoke(...)
+    local args, result = {...}, nil
+    safe(function()
+        local c = getCommF()
+        if not c then warn("[BFHub] CommF_ not found"); return end
+        result = c:InvokeServer(table.unpack(args))
+    end)
+    return result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  GET LEVEL  (from SkyX — uses player.Data.Level.Value)
+-- ═══════════════════════════════════════════════════════════════
+local function getLevel()
+    local lv = 1
+    safe(function()
+        -- Real BF path (SkyX confirmed)
+        local data = LP:FindFirstChild("Data")
+        if data then
+            local lvNode = data:FindFirstChild("Level")
+            if lvNode then lv = lvNode.Value; return end
+        end
+        -- Fallback: leaderstats
+        local s = LP:FindFirstChild("leaderstats")
+        if not s then return end
+        for _, v in pairs(s:GetChildren()) do
+            if v.Name:lower():find("lv") or v.Name:lower():find("level") then
+                lv = v.Value
+            end
+        end
+    end)
+    return lv
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  QUEST DATA — ALL 3 SEAS
+--  Exact CFrames + quest IDs copied from SkyX source
+--  Format: {minLv, maxLv, monName, questID, questNum,
+--           questNPCCFrame, monSpawnCFrame,
+--           needsEntrance(bool), entranceVec3(optional)}
+-- ═══════════════════════════════════════════════════════════════
+local QuestData = {}
+
+if First_Sea then
+    QuestData = {
+        {1,   9,   "Bandit",              "BanditQuest1",    1, CFrame.new(1060.9,16.4,1547.7),    CFrame.new(1038.5,41.2,1576.5),    false},
+        {10,  14,  "Monkey",              "JungleQuest",     1, CFrame.new(-1601.6,36.8,153.3),    CFrame.new(-1448.1,50.8,63.6),     false},
+        {15,  29,  "Gorilla",             "JungleQuest",     2, CFrame.new(-1601.6,36.8,153.3),    CFrame.new(-1142.6,40.4,-515.3),   false},
+        {30,  39,  "Pirate",              "BuggyQuest1",     1, CFrame.new(-1140.1,4.75,3827.4),   CFrame.new(-1201.0,40.6,3857.5),   false},
+        {40,  59,  "Brute",               "BuggyQuest1",     2, CFrame.new(-1140.1,4.75,3827.4),   CFrame.new(-1387.5,24.5,4100.9),   false},
+        {60,  74,  "Desert Bandit",       "DesertQuest",     1, CFrame.new(896.5,6.4,4390.1),      CFrame.new(984.9,16.1,4417.9),     false},
+        {75,  89,  "Desert Officer",      "DesertQuest",     2, CFrame.new(896.5,6.4,4390.1),      CFrame.new(1547.1,14.4,4381.8),    false},
+        {90,  99,  "Snow Bandit",         "SnowQuest",       1, CFrame.new(1386.8,87.2,-1298.3),   CFrame.new(1356.3,105.7,-1328.2),  false},
+        {100, 119, "Snowman",             "SnowQuest",       2, CFrame.new(1386.8,87.2,-1298.3),   CFrame.new(1218.7,138.0,-1488.0),  false},
+        {120, 149, "Chief Petty Officer", "MarineQuest2",    1, CFrame.new(-5035.4,28.6,4324.1),   CFrame.new(-4931.1,65.7,4121.8),   false},
+        {150, 174, "Sky Bandit",          "SkyQuest",        1, CFrame.new(-4842.1,717.6,-2623.0), CFrame.new(-4955.6,365.4,-2908.1), false},
+        {175, 189, "Dark Master",         "SkyQuest",        2, CFrame.new(-4842.1,717.6,-2623.0), CFrame.new(-5148.1,439.0,-2332.9), false},
+        {190, 209, "Prisoner",            "PrisonerQuest",   1, CFrame.new(5310.6,0.35,474.9),     CFrame.new(4937.3,0.33,649.5),     false},
+        {210, 249, "Dangerous Prisoner",  "PrisonerQuest",   2, CFrame.new(5310.6,0.35,474.9),     CFrame.new(5099.6,0.35,1055.7),    false},
+        {250, 274, "Toga Warrior",        "ColosseumQuest",  1, CFrame.new(-1577.7,7.41,-2984.4),  CFrame.new(-1872.5,49.0,-2913.8),  false},
+        {275, 299, "Gladiator",           "ColosseumQuest",  2, CFrame.new(-1577.7,7.41,-2984.4),  CFrame.new(-1521.3,81.2,-3066.3),  false},
+        {300, 324, "Military Soldier",    "MagmaQuest",      1, CFrame.new(-5316.1,12.2,8517.0),   CFrame.new(-5369.0,61.2,8556.4),   false},
+        {325, 374, "Military Spy",        "MagmaQuest",      2, CFrame.new(-5316.1,12.2,8517.0),   CFrame.new(-5787.0,75.8,8651.6),   false},
+        {375, 399, "Fishman Warrior",     "FishmanQuest",    1, CFrame.new(61122.6,18.4,1569.3),   CFrame.new(60844.1,98.4,1298.3),   true, Vector3.new(61163.8,11.6,1819.7)},
+        {400, 449, "Fishman Commando",    "FishmanQuest",    2, CFrame.new(61122.6,18.4,1569.3),   CFrame.new(61738.3,64.2,1433.8),   true, Vector3.new(61163.8,11.6,1819.7)},
+        {450, 474, "God's Guard",         "SkyExp1Quest",    1, CFrame.new(-4721.8,845.3,-1953.8),  CFrame.new(-4628.0,866.9,-1931.2), true, Vector3.new(-4607.8,872.5,-1667.5)},
+        {475, 524, "Shanda",              "SkyExp1Quest",    2, CFrame.new(-7863.1,5545.5,-378.4),  CFrame.new(-7685.1,5601.0,-441.3), true, Vector3.new(-7894.6,5547.1,-380.2)},
+        {525, 549, "Royal Squad",         "SkyExp2Quest",    1, CFrame.new(-7903.3,5635.9,-1410.9), CFrame.new(-7654.2,5637.1,-1407.7),false},
+        {550, 624, "Royal Soldier",       "SkyExp2Quest",    2, CFrame.new(-7903.3,5635.9,-1410.9), CFrame.new(-7760.4,5679.9,-1884.8),false},
+        {625, 649, "Galley Pirate",       "FountainQuest",   1, CFrame.new(5258.2,38.5,4050.0),    CFrame.new(5557.1,152.3,3998.7),   false},
+        {650, 699, "Galley Captain",      "FountainQuest",   2, CFrame.new(5258.2,38.5,4050.0),    CFrame.new(5677.6,92.7,4966.6),    false},
+    }
+
+elseif Second_Sea then
+    QuestData = {
+        {700,  724,  "Raider",            "Area1Quest",          1, CFrame.new(-427.7,72.9,1835.9),    CFrame.new(68.8,93.6,2429.6),      false},
+        {725,  774,  "Mercenary",         "Area1Quest",          2, CFrame.new(-427.7,72.9,1835.9),    CFrame.new(-864.8,122.4,1453.1),   false},
+        {775,  799,  "Swan Pirate",       "Area2Quest",          1, CFrame.new(635.6,73.0,917.8),      CFrame.new(1065.3,137.6,1324.3),   false},
+        {800,  874,  "Factory Staff",     "Area2Quest",          2, CFrame.new(635.6,73.0,917.8),      CFrame.new(533.2,128.4,355.6),     false},
+        {875,  899,  "Marine Lieutenant", "MarineQuest3",        1, CFrame.new(-2440.9,73.0,-3217.7),  CFrame.new(-2489.2,84.6,-3151.8),  false},
+        {900,  949,  "Marine Captain",    "MarineQuest3",        2, CFrame.new(-2440.9,73.0,-3217.7),  CFrame.new(-2335.2,79.7,-3245.8),  false},
+        {950,  974,  "Zombie",            "ZombieQuest",         1, CFrame.new(-5494.3,48.5,-794.5),   CFrame.new(-5536.4,101.0,-835.5),  false},
+        {975,  999,  "Vampire",           "ZombieQuest",         2, CFrame.new(-5494.3,48.5,-794.5),   CFrame.new(-5806.1,16.7,-1164.4),  false},
+        {1000, 1049, "Snow Trooper",      "SnowMountainQuest",   1, CFrame.new(607.0,401.4,-5370.5),   CFrame.new(535.2,432.7,-5484.9),   false},
+        {1050, 1099, "Winter Warrior",    "SnowMountainQuest",   2, CFrame.new(607.0,401.4,-5370.5),   CFrame.new(1234.4,456.9,-5174.1),  false},
+        {1100, 1124, "Lab Subordinate",   "IceSideQuest",        1, CFrame.new(-6061.8,15.9,-4902.0),  CFrame.new(-5720.5,63.3,-4784.6),  false},
+        {1125, 1174, "Horned Warrior",    "IceSideQuest",        2, CFrame.new(-6061.8,15.9,-4902.0),  CFrame.new(-6292.7,91.1,-5502.6),  false},
+        {1175, 1199, "Magma Ninja",       "FireSideQuest",       1, CFrame.new(-5429.0,15.9,-5297.9),  CFrame.new(-5461.8,130.3,-5836.4), false},
+        {1200, 1249, "Lava Pirate",       "FireSideQuest",       2, CFrame.new(-5429.0,15.9,-5297.9),  CFrame.new(-5251.1,55.1,-4774.4),  false},
+        {1250, 1274, "Ship Deckhand",     "ShipQuest1",          1, CFrame.new(1040.2,125.0,32911.0),  CFrame.new(921.1,125.9,33088.3),   true, Vector3.new(923.2,126.9,32852.8)},
+        {1275, 1299, "Ship Engineer",     "ShipQuest1",          2, CFrame.new(1040.2,125.0,32911.0),  CFrame.new(886.2,40.4,32800.8),    true, Vector3.new(923.2,126.9,32852.8)},
+        {1300, 1324, "Ship Steward",      "ShipQuest2",          1, CFrame.new(971.4,125.0,33245.5),   CFrame.new(943.8,129.5,33444.3),   true, Vector3.new(923.2,126.9,32852.8)},
+        {1325, 1349, "Ship Officer",      "ShipQuest2",          2, CFrame.new(971.4,125.0,33245.5),   CFrame.new(955.3,181.0,33331.8),   true, Vector3.new(923.2,126.9,32852.8)},
+        {1350, 1374, "Arctic Warrior",    "FrostQuest",          1, CFrame.new(5668.1,28.2,-6484.6),   CFrame.new(5935.4,77.2,-6472.7),   true, Vector3.new(-6508.5,89.0,-132.8)},
+        {1375, 1424, "Snow Lurker",       "FrostQuest",          2, CFrame.new(5668.1,28.2,-6484.6),   CFrame.new(5628.4,57.5,-6618.3),   false},
+        {1425, 1449, "Sea Soldier",       "ForgottenQuest",      1, CFrame.new(-3054.5,236.8,-10147.7), CFrame.new(-3185.0,58.7,-9663.6), false},
+        {1450, 1499, "Water Fighter",     "ForgottenQuest",      2, CFrame.new(-3054.5,236.8,-10147.7), CFrame.new(-3262.9,298.6,-10552.5),false},
+    }
+
+elseif Third_Sea then
+    QuestData = {
+        {1500, 1524, "Pirate Millionaire",   "PiratePortQuest",    1, CFrame.new(-289.6,43.8,5580.0),    CFrame.new(-435.6,189.6,5551.0),   false},
+        {1525, 1574, "Pistol Billionaire",   "PiratePortQuest",    2, CFrame.new(-289.6,43.8,5580.0),    CFrame.new(-236.5,217.4,6006.0),   false},
+        {1575, 1599, "Dragon Crew Warrior",  "AmazonQuest",        1, CFrame.new(5833.1,51.6,-1103.0),   CFrame.new(6301.9,104.7,-1082.6),  false},
+        {1600, 1624, "Dragon Crew Archer",   "AmazonQuest",        2, CFrame.new(5833.1,51.6,-1103.0),   CFrame.new(6831.1,441.7,446.5),    false},
+        {1625, 1649, "Female Islander",      "AmazonQuest2",       1, CFrame.new(5446.8,601.6,749.4),    CFrame.new(5792.5,848.1,1084.1),   false},
+        {1650, 1699, "Giant Islander",       "AmazonQuest2",       2, CFrame.new(5446.8,601.6,749.4),    CFrame.new(5009.5,664.1,-40.9),    false},
+        {1700, 1724, "Marine Commodore",     "MarineTreeIsland",   1, CFrame.new(2179.9,28.7,-6740.0),   CFrame.new(2198.0,128.7,-7109.5),  false},
+        {1725, 1774, "Marine Rear Admiral",  "MarineTreeIsland",   2, CFrame.new(2179.9,28.7,-6740.0),   CFrame.new(3294.3,385.4,-7048.6),  false},
+        {1775, 1799, "Fishman Raider",       "DeepForestIsland3",  1, CFrame.new(-10582.7,331.7,-8757.6),CFrame.new(-10553.2,521.3,-8176.9),false},
+        {1800, 1824, "Fishman Captain",      "DeepForestIsland3",  2, CFrame.new(-10583.0,331.7,-8759.4),CFrame.new(-10789.4,427.1,-9131.4),false},
+        {1825, 1849, "Forest Pirate",        "DeepForestIsland",   1, CFrame.new(-13232.6,332.4,-7626.4),CFrame.new(-13489.3,400.3,-7770.2),false},
+        {1850, 1899, "Mythological Pirate",  "DeepForestIsland",   2, CFrame.new(-13232.6,332.4,-7626.4),CFrame.new(-13508.6,582.4,-6985.3),false},
+        {1900, 1924, "Jungle Pirate",        "DeepForestIsland2",  1, CFrame.new(-12682.0,390.8,-9902.1),CFrame.new(-12267.1,459.7,-10277.2),false},
+        {1925, 1974, "Musketeer Pirate",     "DeepForestIsland2",  2, CFrame.new(-12682.0,390.8,-9902.1),CFrame.new(-13291.5,520.4,-9904.6),false},
+        {1975, 1999, "Reborn Skeleton",      "HauntedQuest1",      1, CFrame.new(-9480.8,142.1,5566.3),  CFrame.new(-8761.7,183.4,6168.3),  false},
+        {2000, 2024, "Living Zombie",        "HauntedQuest1",      2, CFrame.new(-9480.8,142.1,5566.3),  CFrame.new(-10103.7,238.5,6179.7), false},
+        {2025, 2049, "Demonic Soul",         "HauntedQuest2",      1, CFrame.new(-9516.9,178.0,6078.4),  CFrame.new(-9712.0,204.6,6193.3),  false},
+        {2050, 2074, "Posessed Mummy",       "HauntedQuest2",      2, CFrame.new(-9516.9,178.0,6078.4),  CFrame.new(-9545.7,69.6,6339.5),   false},
+        {2075, 2099, "Peanut Scout",         "NutsIslandQuest",    1, CFrame.new(-2105.5,37.2,-10195.5), CFrame.new(-2150.5,122.4,-10358.9),false},
+        {2100, 2124, "Peanut President",     "NutsIslandQuest",    2, CFrame.new(-2105.5,37.2,-10195.5), CFrame.new(-2150.5,122.4,-10358.9),false},
+        {2125, 2149, "Ice Cream Chef",       "IceCreamIslandQuest",1, CFrame.new(-819.3,64.9,-10967.2),  CFrame.new(-789.9,209.3,-11009.9), false},
+        {2150, 2199, "Ice Cream Commander",  "IceCreamIslandQuest",2, CFrame.new(-819.3,64.9,-10967.2),  CFrame.new(-789.9,209.3,-11009.9), false},
+        {2200, 2224, "Cookie Crafter",       "CakeQuest1",         1, CFrame.new(-2022.2,36.9,-12030.9), CFrame.new(-2321.7,36.6,-12216.7), false},
+        {2225, 2249, "Cake Guard",           "CakeQuest1",         2, CFrame.new(-2022.2,36.9,-12030.9), CFrame.new(-1418.1,36.6,-12255.7), false},
+        {2250, 2274, "Baking Staff",         "CakeQuest2",         1, CFrame.new(-1928.3,37.7,-12840.6), CFrame.new(-1980.4,36.6,-12983.8), false},
+        {2275, 2299, "Head Baker",           "CakeQuest2",         2, CFrame.new(-1928.3,37.7,-12840.6), CFrame.new(-2251.5,52.2,-13033.3), false},
+        {2300, 2324, "Cocoa Warrior",        "ChocQuest1",         1, CFrame.new(231.7,23.9,-12200.2),   CFrame.new(167.9,26.2,-12238.8),   false},
+        {2325, 2349, "Chocolate Bar Battler","ChocQuest1",         2, CFrame.new(231.7,23.9,-12200.2),   CFrame.new(701.3,25.5,-12708.2),   false},
+        {2350, 2374, "Sweet Thief",          "ChocQuest2",         1, CFrame.new(151.1,23.8,-12774.6),   CFrame.new(-140.2,25.5,-12652.3),  false},
+        {2375, 2399, "Candy Rebel",          "ChocQuest2",         2, CFrame.new(151.1,23.8,-12774.6),   CFrame.new(47.9,25.5,-13029.2),    false},
+        {2400, 2424, "Candy Pirate",         "CandyQuest1",        1, CFrame.new(-1149.3,13.5,-14445.6), CFrame.new(-1437.5,17.1,-14385.6), false},
+        {2425, 2449, "Snow Demon",           "CandyQuest1",        2, CFrame.new(-1149.3,13.5,-14445.6), CFrame.new(-916.2,17.1,-14638.8),  false},
+        {2450, 2474, "Isle Outlaw",          "TikiQuest1",         1, CFrame.new(-16549.8,55.6,-179.9),  CFrame.new(-16162.8,11.6,-96.4),   false},
+        {2475, 2524, "Island Boy",           "TikiQuest1",         2, CFrame.new(-16549.8,55.6,-179.9),  CFrame.new(-16912.1,11.7,-133.0),  false},
+        {2525, 9999, "Isle Champion",        "TikiQuest2",         2, CFrame.new(-16542.4,55.6,1044.4),  CFrame.new(-16848.9,21.6,1041.4),  false},
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  BOSS DATA  (from SkyX — exact CFrames all 3 seas)
+-- ═══════════════════════════════════════════════════════════════
+local BossData = {
+    -- First Sea
+    {name="The Gorilla King",      cf=CFrame.new(-1088.7,8.1,-488.5)},
+    {name="Bobby",                 cf=CFrame.new(-1087.3,46.9,4040.1)},
+    {name="The Saw",               cf=CFrame.new(-784.8,72.4,1603.5)},
+    {name="Yeti",                  cf=CFrame.new(1218.7,138.0,-1488.0)},
+    {name="Vice Admiral",          cf=CFrame.new(-5006.5,88.0,4353.1)},
+    {name="Saber Expert",          cf=CFrame.new(-1458.8,29.8,-50.6)},
+    {name="Warden",                cf=CFrame.new(5278.0,2.1,944.1)},
+    {name="Chief Warden",          cf=CFrame.new(5206.9,0.99,814.9)},
+    {name="Swan",                  cf=CFrame.new(5325.0,7.0,719.5)},
+    {name="Magma Admiral",         cf=CFrame.new(-5765.8,82.9,8718.3)},
+    {name="Fishman Lord",          cf=CFrame.new(61260.1,30.9,1193.4)},
+    {name="Wysper",                cf=CFrame.new(-7866.1,5576.4,-546.7)},
+    {name="Thunder God",           cf=CFrame.new(-7994.9,5761.0,-2088.6)},
+    {name="Cyborg",                cf=CFrame.new(6094.0,73.7,3825.7)},
+    {name="Ice Admiral",           cf=CFrame.new(1266.0,26.1,-1399.5)},
+    {name="Greybeard",             cf=CFrame.new(-5081.3,85.2,4257.3)},
+    -- Second Sea
+    {name="Diamond",               cf=CFrame.new(-1576.7,198.5,13.7)},
+    {name="Jeremy",                cf=CFrame.new(2006.9,448.9,853.9)},
+    {name="Fajita",                cf=CFrame.new(-2172.7,103.3,-4015.0)},
+    {name="Don Swan",              cf=CFrame.new(2286.2,15.1,863.8)},
+    {name="Smoke Admiral",         cf=CFrame.new(-5275.1,20.7,-5260.6)},
+    {name="Awakened Ice Admiral",  cf=CFrame.new(6403.5,340.2,-6894.5)},
+    {name="Tide Keeper",           cf=CFrame.new(-3795.6,105.8,-11421.3)},
+    {name="Darkbeard",             cf=CFrame.new(3677.0,62.7,-3144.8)},
+    {name="Cursed Captain",        cf=CFrame.new(916.9,181.0,33422.0)},
+    {name="Order",                 cf=CFrame.new(-6217.2,28.0,-5053.1)},
+    -- Third Sea
+    {name="Stone",                 cf=CFrame.new(-1027.6,92.4,6578.8)},
+    {name="Island Empress",        cf=CFrame.new(5543.8,668.9,199.0)},
+    {name="Kilo Admiral",          cf=CFrame.new(2764.2,432.4,-7144.4)},
+    {name="Captain Elephant",      cf=CFrame.new(-13376.7,433.2,-8071.3)},
+    {name="Cake Queen",            cf=CFrame.new(-678.6,381.3,-11114.2)},
+    {name="Longma",                cf=CFrame.new(-10238.8,389.7,-9549.7)},
+    {name="Soul Reaper",           cf=CFrame.new(-9524.7,315.8,6655.7)},
+    {name="rip_indra True Form",   cf=CFrame.new(-5415.3,505.7,-2814.0)},
+    {name="Dough King",            cf=CFrame.new(587.6,154.0,-1293.2)},
+}
+
+-- ═══════════════════════════════════════════════════════════════
+--  TELEPORT ISLANDS  (per sea)
+-- ═══════════════════════════════════════════════════════════════
+local TpData = {}
+if First_Sea then
+    TpData = {
+        ["Starter Island"]   = CFrame.new(1060,16,1547),
+        ["Jungle"]           = CFrame.new(-1601,36,153),
+        ["Pirate Village"]   = CFrame.new(-1140,4,3827),
+        ["Desert"]           = CFrame.new(896,6,4390),
+        ["Snow Island"]      = CFrame.new(1386,87,-1298),
+        ["Marine Fortress"]  = CFrame.new(-5035,28,4324),
+        ["Skylands Lower"]   = CFrame.new(-4842,717,-2623),
+        ["Prison"]           = CFrame.new(5310,0,474),
+        ["Colosseum"]        = CFrame.new(-1577,7,-2984),
+        ["Magma Village"]    = CFrame.new(-5316,12,8517),
+        ["Underwater City"]  = CFrame.new(61122,18,1569),
+        ["Upper Skylands"]   = CFrame.new(-7903,5635,-1410),
+        ["Fountain City"]    = CFrame.new(5258,38,4050),
+    }
+elseif Second_Sea then
+    TpData = {
+        ["Kingdom of Rose"]  = CFrame.new(-427,72,1835),
+        ["Green Zone"]       = CFrame.new(635,73,917),
+        ["Graveyard"]        = CFrame.new(-5494,48,-794),
+        ["Snow Mountain"]    = CFrame.new(607,401,-5370),
+        ["Hot & Cold"]       = CFrame.new(-6061,15,-4902),
+        ["Cursed Ship"]      = CFrame.new(1040,125,32911),
+        ["Floating Forest"]  = CFrame.new(5668,28,-6484),
+        ["Forgotten Island"] = CFrame.new(-3054,236,-10147),
+    }
+elseif Third_Sea then
+    TpData = {
+        ["Port Town"]         = CFrame.new(-289,43,5580),
+        ["Floating Turtle"]   = CFrame.new(5833,51,-1103),
+        ["Amazon Lily"]       = CFrame.new(5446,601,749),
+        ["Marine Tree Island"]= CFrame.new(2179,28,-6740),
+        ["Deep Forest"]       = CFrame.new(-13232,332,-7626),
+        ["Haunted Castle"]    = CFrame.new(-9480,142,5566),
+        ["Nut Island"]        = CFrame.new(-2105,37,-10195),
+        ["Ice Cream Island"]  = CFrame.new(-819,64,-10967),
+        ["Cake Island"]       = CFrame.new(-2022,36,-12030),
+        ["Chocolate Island"]  = CFrame.new(231,23,-12200),
+        ["Candy Island"]      = CFrame.new(-1149,13,-14445),
+        ["Tiki Outpost"]      = CFrame.new(-16549,55,-179),
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  SETTINGS
+-- ═══════════════════════════════════════════════════════════════
+_G.Settings = {
+    Farm = {
+        ["Auto Farm"]          = false,
+        ["Auto Quest"]         = true,
+        ["Kill Aura"]          = false,
+        ["Bring Mob"]          = false,
+        ["Bring Range"]        = 300,
+        ["Fast Attack"]        = false,
+        ["Auto Boss"]          = false,
+        ["Auto Sea Beast"]     = false,
+        ["Auto Elite Hunter"]  = false,
+        ["Auto Collect Chest"] = false,
+        ["Auto Bounty"]        = false,
+        ["Selected Boss"]      = "Greybeard",
+    },
+    Player = {
+        ["No Clip"]            = false,
+        ["Infinite Jump"]      = false,
+        ["Walk Speed"]         = 16,
+        ["Jump Power"]         = 50,
+        -- Real BF attribute names (confirmed from SoulsHub source)
+        ["Infinite Energy"]    = false,
+        ["Infinite Ability"]   = false,
+        ["Infinite Geppo"]     = false,
+        ["Infinite Soru"]      = false,
+        ["Dodge No Cooldown"]  = false,
+    },
+    Stats = {
+        ["Auto Stats"]         = false,
+        ["Auto Mastery"]       = false,
+        ["Auto Haki"]          = false,
+        ["Auto Observation"]   = false,
+        ["Stat Priority"]      = "Melee",
+    },
+    Fruit = {
+        ["Fruit Sniper"]       = false,
+        ["Auto Store Fruit"]   = false,
+    },
+    ESP = {
+        ["Player ESP"]         = false,
+        ["Fruit ESP"]          = false,
+        ["Chest ESP"]          = false,
+        ["Mob ESP"]            = false,
+    },
+    Misc = {
+        ["Remove Fog"]         = false,
+        ["FPS Boost"]          = false,
+    },
+}
+
+-- ═══════════════════════════════════════════════════════════════
+--  HELPER — GET CURRENT QUEST DATA
+-- ═══════════════════════════════════════════════════════════════
+local function getQD()
+    local lv = getLevel()
+    for _, d in ipairs(QuestData) do
+        if lv >= d[1] and lv <= d[2] then return d end
+    end
+    return QuestData[1] or QuestData[#QuestData]
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  TELEPORT  (tween close, instant far)
+-- ═══════════════════════════════════════════════════════════════
+local function tpTo(cf, instant)
+    if not HRP then return end
+    safe(function()
+        if typeof(cf) == "Instance" then cf = cf.CFrame end
+        if instant or (cf.Position - HRP.Position).Magnitude > 100 then
+            HRP.CFrame = cf
+            task.wait(0.15)
+        else
+            local tw = TweenService:Create(
+                HRP, TweenInfo.new(0.15, Enum.EasingStyle.Linear), {CFrame=cf}
+            )
+            tw:Play(); tw.Completed:Wait()
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  requestEntrance  (from SkyX — needed for gated islands)
+-- ═══════════════════════════════════════════════════════════════
+local function requestEntrance(vec3)
+    safe(function() invoke("requestEntrance", vec3) end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  FIND ENEMY  (SkyX method — workspace.Enemies, NOT GetDescendants)
+-- ═══════════════════════════════════════════════════════════════
+local function findEnemy(name)
+    local best, bestDist = nil, math.huge
+    if not HRP then return nil, math.huge end
+    safe(function()
+        local folder = workspace:FindFirstChild("Enemies")
+        if not folder then return end
+        for _, v in pairs(folder:GetChildren()) do
+            if v.Name == name or v.Name:find(name, 1, true) then
+                local h = v:FindFirstChild("Humanoid")
+                local r = v:FindFirstChild("HumanoidRootPart")
+                if h and h.Health > 0 and r then
+                    local d = (r.Position - HRP.Position).Magnitude
+                    if d < bestDist then bestDist=d; best=r end
+                end
+            end
+        end
+    end)
+    return best, bestDist
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  MOB MAGNET  (SkyX real method)
+--  sethiddenproperty + HRP Size 50 + ChangeState(14) + no collision
+-- ═══════════════════════════════════════════════════════════════
+local magnetActive = false
+local magnetCFrame = CFrame.new(0,0,0)
+
+local function startMagnet(monName)
+    magnetActive = true
+    task.spawn(function()
+        while magnetActive do
+            task.wait()
+            safe(function()
+                if not HRP then return end
+                magnetCFrame = HRP.CFrame
+                local folder = workspace:FindFirstChild("Enemies")
+                if not folder then return end
+                local range = _G.Settings.Farm["Bring Range"]
+                for _, v in pairs(folder:GetChildren()) do
+                    if v.Name == monName or v.Name:find(monName, 1, true) then
+                        local h = v:FindFirstChild("Humanoid")
+                        local r = v:FindFirstChild("HumanoidRootPart")
+                        local head = v:FindFirstChild("Head")
+                        if h and h.Health > 0 and r then
+                            if (r.Position - HRP.Position).Magnitude <= range then
+                                r.Size      = Vector3.new(50,50,50)
+                                r.CFrame    = magnetCFrame
+                                h:ChangeState(14)
+                                r.CanCollide = false
+                                if head then head.CanCollide = false end
+                                if h:FindFirstChild("Animator") then
+                                    h.Animator:Destroy()
+                                end
+                                pcall(sethiddenproperty,
+                                    LP, "SimulationRadius", math.huge)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+local function stopMagnet() magnetActive = false end
+
+-- ═══════════════════════════════════════════════════════════════
+--  AUTO ATTACK
+-- ═══════════════════════════════════════════════════════════════
+local function doAttack()
+    safe(function()
+        -- Try tool activation first
+        local tool = Char and Char:FindFirstChildOfClass("Tool")
+        if tool and tool:FindFirstChild("Handle") then
+            local act = tool:FindFirstChild("Activated")
+            if act then act:Fire(); return end
+        end
+        -- VIM click fallback
+        local c = Camera.ViewportSize / 2
+        VIM:SendMouseButtonEvent(c.X, c.Y, 0, true, game, 0)
+        task.wait(_G.Settings.Farm["Fast Attack"] and 0.03 or 0.07)
+        VIM:SendMouseButtonEvent(c.X, c.Y, 0, false, game, 0)
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  MASTERY  (Z X C V)
+-- ═══════════════════════════════════════════════════════════════
+local function doMastery()
+    for _, k in ipairs({Enum.KeyCode.Z,Enum.KeyCode.X,
+                        Enum.KeyCode.C,Enum.KeyCode.V}) do
+        safe(function()
+            VIM:SendKeyEvent(true, k, false, game)
+            task.wait(0.07)
+            VIM:SendKeyEvent(false, k, false, game)
+        end)
+        task.wait(0.1)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  HAKI  (real remote names)
+-- ═══════════════════════════════════════════════════════════════
+local hakiTick, kenTick = 0, 0
+local function doAutoHaki()
+    if tick()-hakiTick < 5 then return end
+    hakiTick = tick()
+    invoke("SetBusoshoku", true)
+    safe(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode.J, false, game)
+        task.wait(0.07)
+        VIM:SendKeyEvent(false, Enum.KeyCode.J, false, game)
+    end)
+end
+
+local function doAutoObs()
+    if tick()-kenTick < 5 then return end
+    kenTick = tick()
+    invoke("SetKenbunshoku", true)
+    safe(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+        task.wait(0.07)
+        VIM:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  AUTO STATS
+-- ═══════════════════════════════════════════════════════════════
+local statList = {"Melee","Defense","Sword","Gun","BloxFruit"}
+local statIdx, lastStatTick = 1, 0
+local function doAutoStats()
+    if tick()-lastStatTick < 0.5 then return end
+    lastStatTick = tick()
+    safe(function()
+        local s = LP:FindFirstChild("Stats")
+        if not s then return end
+        local pts = s:FindFirstChild("StatPoint") or s:FindFirstChild("Points")
+        if not pts or pts.Value <= 0 then return end
+        local priority = _G.Settings.Stats["Stat Priority"]
+        invoke("Stat", priority ~= "" and priority or statList[statIdx])
+        statIdx = (statIdx % #statList) + 1
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  PLAYER ATTRIBUTES  (real BF names from SoulsHub source)
+-- ═══════════════════════════════════════════════════════════════
+local function doPlayerAttrs()
+    safe(function()
+        if not Hum then return end
+        local P = _G.Settings.Player
+        if P["Infinite Energy"]   then Hum:SetAttribute("Energy",1000)       end
+        if P["Infinite Ability"]  then Hum:SetAttribute("AbilityCooldown",0) end
+        if P["Infinite Geppo"]    then Hum:SetAttribute("GeppoCooldown",0)   end
+        if P["Infinite Soru"]     then Hum:SetAttribute("SoruCooldown",0)    end
+        if P["Dodge No Cooldown"] then Hum:SetAttribute("DodgeCooldown",0)   end
+        if P["Infinite Jump"]     then Hum:SetAttribute("JumpCooldown",0)    end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  KILL AURA  (workspace.Enemies — correct method)
+-- ═══════════════════════════════════════════════════════════════
+local function doKillAura()
+    if not HRP then return end
+    safe(function()
+        local folder = workspace:FindFirstChild("Enemies")
+        if not folder then return end
+        for _, v in pairs(folder:GetChildren()) do
+            local h = v:FindFirstChild("Humanoid")
+            local r = v:FindFirstChild("HumanoidRootPart")
+            if h and h.Health > 0 and r then
+                if (r.Position - HRP.Position).Magnitude <= 25 then
+                    doAttack()
+                end
+            end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  NO CLIP
+-- ═══════════════════════════════════════════════════════════════
+local function doNoClip()
+    if not Char then return end
+    safe(function()
+        for _, p in pairs(Char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  BOSS FARM
+-- ═══════════════════════════════════════════════════════════════
+local function attackBoss(bossName)
+    safe(function()
+        local folder = workspace:FindFirstChild("Enemies")
+        if folder then
+            for _, v in pairs(folder:GetChildren()) do
+                if v.Name == bossName then
+                    local h = v:FindFirstChild("Humanoid")
+                    local r = v:FindFirstChild("HumanoidRootPart")
+                    if h and h.Health > 0 and r and HRP then
+                        if (r.Position-HRP.Position).Magnitude > 15 then
+                            tpTo(r.CFrame * CFrame.new(0,0,-10), true)
+                        end
+                        doAttack()
+                        if _G.Settings.Stats["Auto Mastery"] then doMastery() end
+                        return
+                    end
+                end
+            end
+        end
+        -- Not found → TP to known spawn point
+        for _, b in pairs(BossData) do
+            if b.name == bossName then tpTo(b.cf, true); break end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  FRUIT SNIPER
+-- ═══════════════════════════════════════════════════════════════
+local lastSnipeTick = 0
+local function doFruitSniper()
+    if tick()-lastSnipeTick < 1.5 then return end
+    lastSnipeTick = tick()
+    safe(function()
+        local best, bestDist = nil, math.huge
+        for _, v in pairs(workspace:GetChildren()) do
+            if v:IsA("Model") and v.Name:find("[Ff]ruit") then
+                local part = v:FindFirstChild("Handle")
+                          or v.PrimaryPart
+                          or v:FindFirstChildOfClass("Part")
+                if part and HRP then
+                    local d = (part.Position-HRP.Position).Magnitude
+                    if d < bestDist then bestDist=d; best=part end
+                end
+            end
+        end
+        if best then tpTo(best.CFrame * CFrame.new(0,0,-3), true) end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  MISC
+-- ═══════════════════════════════════════════════════════════════
+local fogDone = false
+local function doRemoveFog()
+    if fogDone then return end; fogDone = true
+    safe(function()
+        Lighting.FogEnd = 999999; Lighting.FogStart = 999999
+        for _, v in pairs(Lighting:GetChildren()) do
+            if v:IsA("Atmosphere") then
+                v.Density=0; v.Haze=0; v.Glare=0; v.Offset=0
+            end
+        end
+    end)
+end
+
+local fpsDone = false
+local function doFPSBoost()
+    if fpsDone then return end; fpsDone = true
+    safe(function()
+        Lighting.GlobalShadows = false
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Smoke")
+            or v:IsA("Fire")           or v:IsA("Sparkles") then
+                v.Enabled = false
+            end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  ESP SYSTEM
+-- ═══════════════════════════════════════════════════════════════
+local ESPBBs = {fruit={}, player={}, chest={}, mob={}}
+
+local function clearESP(t)
+    for _, v in pairs(t) do
+        safe(function() if v and v.Parent then v:Destroy() end end)
+    end
+    table.clear(t)
+end
+
+local function makeESP(parent, text, color)
+    if not parent then return end
+    safe(function()
+        local old = parent:FindFirstChild("__ESP")
+        if old then old:Destroy() end
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "__ESP"
+        bb.Size = UDim2.new(0,130,0,32)
+        bb.StudsOffset = Vector3.new(0,5,0)
+        bb.AlwaysOnTop = true
+        bb.MaxDistance = 1000
+        bb.Parent = parent
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1,0,1,0)
+        lbl.BackgroundTransparency = 1
+        lbl.TextColor3 = color
+        lbl.TextStrokeTransparency = 0
+        lbl.TextStrokeColor3 = Color3.new(0,0,0)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 11
+        lbl.Text = text
+        lbl.Parent = bb
+    end)
+end
+
+local function doFruitESP()
+    clearESP(ESPBBs.fruit)
+    safe(function()
+        for _, v in pairs(workspace:GetChildren()) do
+            if v:IsA("Model") and v.Name:find("[Ff]ruit") then
+                local part = v:FindFirstChild("Handle")
+                          or v.PrimaryPart or v:FindFirstChildOfClass("Part")
+                if part then
+                    makeESP(part, "🍎 "..v.Name, Color3.fromRGB(255,220,0))
+                    table.insert(ESPBBs.fruit, part:FindFirstChild("__ESP"))
+                end
+            end
+        end
+    end)
+end
+
+local function doPlayerESP()
+    clearESP(ESPBBs.player)
+    safe(function()
+        for _, p in pairs(Players:GetPlayers()) do
+            if p==LP or not p.Character then continue end
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            local hum  = p.Character:FindFirstChildOfClass("Humanoid")
+            if not (root and hum) then continue end
+            local hp  = math.floor(hum.Health)
+            local mhp = math.floor(hum.MaxHealth)
+            local pct = mhp > 0 and (hp/mhp) or 0
+            makeESP(root,
+                "["..p.Name.."]\nHP: "..hp.."/"..mhp,
+                Color3.fromRGB(
+                    math.floor(255*(1-pct)),
+                    math.floor(255*pct),
+                    0
+                )
+            )
+            table.insert(ESPBBs.player, root:FindFirstChild("__ESP"))
+        end
+    end)
+end
+
+local function doChestESP()
+    clearESP(ESPBBs.chest)
+    safe(function()
+        for _, m in pairs(workspace:GetDescendants()) do
+            if not m:IsA("Model") then continue end
+            if not (m.Name:lower():find("chest") or m.Name:lower():find("treasure")) then continue end
+            local part = m.PrimaryPart or m:FindFirstChildOfClass("Part")
+            if part then
+                makeESP(part, "📦 "..m.Name, Color3.fromRGB(255,200,0))
+                table.insert(ESPBBs.chest, part:FindFirstChild("__ESP"))
+            end
+        end
+    end)
+end
+
+local function doMobESP()
+    clearESP(ESPBBs.mob)
+    safe(function()
+        local folder = workspace:FindFirstChild("Enemies")
+        if not folder then return end
+        for _, v in pairs(folder:GetChildren()) do
+            local r = v:FindFirstChild("HumanoidRootPart")
+            local h = v:FindFirstChildOfClass("Humanoid")
+            if r and h and h.Health > 0 then
+                makeESP(r,
+                    "👾 "..v.Name.."\n❤ "..math.floor(h.Health),
+                    Color3.fromRGB(255,80,80)
+                )
+                table.insert(ESPBBs.mob, r:FindFirstChild("__ESP"))
+            end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  AUTO FARM LOOP  (3-phase: GET_QUEST → KILL → TURN_IN)
+--  Uses real CFrames from SkyX + requestEntrance for gated islands
+-- ═══════════════════════════════════════════════════════════════
+local farmPhase   = "IDLE"
+local farmKills   = 0
+local lastEnemyHP = 0
+local farmConn    = nil
+local farmStatus  = "Idle"
+
+local function stopFarm()
+    _G.Settings.Farm["Auto Farm"] = false
+    if farmConn then farmConn:Disconnect(); farmConn=nil end
+    stopMagnet()
+    farmPhase="IDLE"; farmKills=0; farmStatus="Idle"
+end
+
+local function startFarm()
+    stopFarm()
+    _G.Settings.Farm["Auto Farm"] = true
+    farmPhase = "GET_QUEST"; farmKills = 0
+
+    farmConn = RunService.Heartbeat:Connect(function()
+        if not _G.Settings.Farm["Auto Farm"] then stopFarm(); return end
+        if not refreshChar() then
+            task.wait(2); farmPhase="GET_QUEST"; return
+        end
+
+        local data = getQD()
+        -- data indices:
+        -- [1]=minLv [2]=maxLv [3]=monName [4]=questID [5]=questNum
+        -- [6]=questNPCCFrame [7]=monSpawnCFrame
+        -- [8]=needsEntrance [9]=entranceVec3
+
+        -- ── PHASE 1: ACCEPT QUEST ──────────────────────────
+        if farmPhase == "GET_QUEST" then
+            farmStatus = "Getting quest: " .. data[4]
+            if _G.Settings.Farm["Auto Quest"] then
+                safe(function()
+                    -- Handle gated islands (Fishman City, Ship, etc.)
+                    if data[8] then
+                        local monPos = data[7].Position
+                        if (monPos - HRP.Position).Magnitude > 3000 then
+                            requestEntrance(data[9])
+                            task.wait(1.5)
+                        end
+                    end
+                    -- TP to quest NPC (exact SkyX CFrame)
+                    tpTo(data[6], true)
+                    task.wait(0.8)
+                    -- Real CommF_ quest invoke
+                    invoke("StartQuest", data[4], data[5])
+                    task.wait(0.4)
+                end)
+            end
+            if _G.Settings.Farm["Bring Mob"] then
+                startMagnet(data[3])
+            end
+            farmKills=0; lastEnemyHP=0; farmPhase="KILL"
+
+        -- ── PHASE 2: KILL ──────────────────────────────────
+        elseif farmPhase == "KILL" then
+            farmStatus = "Farming " .. data[3] .. " (" .. farmKills .. "/8)"
+            safe(function()
+                -- TP near mob spawn (SkyX real coords)
+                local spawnDist = (data[7].Position - HRP.Position).Magnitude
+                if spawnDist > 50 then tpTo(data[7], true) end
+
+                -- Find alive enemy in workspace.Enemies
+                local enemy, eDist = findEnemy(data[3])
+                if not enemy then return end
+                local hum = enemy.Parent:FindFirstChildOfClass("Humanoid")
+                if not hum then return end
+
+                -- Kill detection
+                if hum.Health <= 0 and lastEnemyHP > 0 then
+                    farmKills += 1; lastEnemyHP=0; task.wait(0.3); return
+                end
+                lastEnemyHP = hum.Health
+
+                if eDist > 10 then tpTo(enemy.CFrame * CFrame.new(0,0,-8), true) end
+                doAttack()
+
+                local Ss = _G.Settings
+                if Ss.Stats["Auto Mastery"]     then doMastery()   end
+                if Ss.Stats["Auto Haki"]         then doAutoHaki()  end
+                if Ss.Stats["Auto Observation"]  then doAutoObs()   end
+                if Ss.Stats["Auto Stats"]        then doAutoStats() end
+                if Ss.Farm["Kill Aura"]          then doKillAura()  end
+            end)
+
+            if farmKills >= 8 then farmPhase = "TURN_IN" end
+
+        -- ── PHASE 3: TURN IN ───────────────────────────────
+        elseif farmPhase == "TURN_IN" then
+            farmStatus = "Turning in quest..."
+            if _G.Settings.Farm["Auto Quest"] then
+                safe(function()
+                    tpTo(data[6], true)
+                    task.wait(0.7)
+                    invoke("EndQuest")
+                    task.wait(0.4)
+                end)
+            end
+            stopMagnet()
+            farmKills=0; lastEnemyHP=0; farmPhase="GET_QUEST"
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+--  LOAD FLUENT UI  (same lib as SkyX uses)
+-- ═══════════════════════════════════════════════════════════════
+local Fluent = loadstring(game:HttpGet(
+    "https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"
+))()
+local SaveManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"
+))()
+local InterfaceManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"
+))()
+
+-- ═══════════════════════════════════════════════════════════════
+--  BUILD WINDOW
+-- ═══════════════════════════════════════════════════════════════
+local Window = Fluent:CreateWindow({
+    Title    = "BF Ultimate Hub  •  " .. seaName,
+    SubTitle = "Lv " .. getLevel() .. "  |  All 3 Seas  |  Real Data",
+    TabWidth = 160,
+    Size     = UDim2.fromOffset(580, 400),
+    Acrylic  = false,
+    Theme    = "Dark",
+    MinimizeKey = Enum.KeyCode.End,
+})
+
+local Tabs = {
+    Farm     = Window:AddTab({Title="Farm",       Icon="sword"}),
+    Stats    = Window:AddTab({Title="Stats/Haki", Icon="bar-chart"}),
+    Boss     = Window:AddTab({Title="Bosses",     Icon="skull"}),
+    Fruit    = Window:AddTab({Title="Fruit",      Icon="cherry"}),
+    Player   = Window:AddTab({Title="Player",     Icon="user"}),
+    ESP      = Window:AddTab({Title="ESP",        Icon="eye"}),
+    Teleport = Window:AddTab({Title="Teleport",   Icon="navigation"}),
+    Misc     = Window:AddTab({Title="Misc",       Icon="settings"}),
+}
+
+-- Status paragraph (live updates)
+local statusPara = Tabs.Farm:AddParagraph({
+    Title   = "Status",
+    Content = "Idle  |  Lv: " .. getLevel() .. "  |  Sea: " .. seaName
+})
+
+-- ══════════════════════════════════════
+--  FARM TAB
+-- ══════════════════════════════════════
+Tabs.Farm:AddToggle("auto_farm", {
+    Title="Auto Farm (All 3 Seas)", Default=false,
+    Callback=function(v)
+        _G.Settings.Farm["Auto Farm"] = v
+        if v then startFarm() else stopFarm() end
+    end
+})
+Tabs.Farm:AddToggle("auto_quest", {
+    Title="Auto Quest", Default=true,
+    Callback=function(v) _G.Settings.Farm["Auto Quest"] = v end
+})
+Tabs.Farm:AddToggle("kill_aura", {
+    Title="Kill Aura (25 studs, workspace.Enemies)", Default=false,
+    Callback=function(v) _G.Settings.Farm["Kill Aura"] = v end
+})
+Tabs.Farm:AddToggle("bring_mob", {
+    Title="Bring Mob (Real SkyX Magnet)", Default=false,
+    Callback=function(v)
+        _G.Settings.Farm["Bring Mob"] = v
+        if not v then stopMagnet() end
+    end
+})
+Tabs.Farm:AddSlider("bring_range", {
+    Title="Bring Mob Range", Default=300, Min=50, Max=500, Rounding=0,
+    Callback=function(v) _G.Settings.Farm["Bring Range"] = v end
+})
+Tabs.Farm:AddToggle("fast_attack", {
+    Title="Fast Attack", Default=false,
+    Callback=function(v) _G.Settings.Farm["Fast Attack"] = v end
+})
+Tabs.Farm:AddToggle("auto_sea_beast", {
+    Title="Auto Sea Beast", Default=false,
+    Callback=function(v) _G.Settings.Farm["Auto Sea Beast"] = v end
+})
+Tabs.Farm:AddToggle("auto_elite", {
+    Title="Auto Elite Hunter", Default=false,
+    Callback=function(v) _G.Settings.Farm["Auto Elite Hunter"] = v end
+})
+Tabs.Farm:AddToggle("auto_chest", {
+    Title="Auto Collect Chest", Default=false,
+    Callback=function(v) _G.Settings.Farm["Auto Collect Chest"] = v end
+})
+Tabs.Farm:AddToggle("auto_bounty", {
+    Title="Auto Bounty", Default=false,
+    Callback=function(v) _G.Settings.Farm["Auto Bounty"] = v end
+})
+
+-- ══════════════════════════════════════
+--  STATS TAB
+-- ══════════════════════════════════════
+Tabs.Stats:AddToggle("auto_stats", {
+    Title="Auto Stats", Default=false,
+    Callback=function(v) _G.Settings.Stats["Auto Stats"] = v end
+})
+Tabs.Stats:AddDropdown("stat_priority", {
+    Title="Stat Priority",
+    Values={"Melee","Defense","Sword","Gun","BloxFruit"},
+    Default="Melee",
+    Callback=function(v) _G.Settings.Stats["Stat Priority"] = v end
+})
+Tabs.Stats:AddToggle("auto_mastery", {
+    Title="Auto Mastery (Z X C V)", Default=false,
+    Callback=function(v) _G.Settings.Stats["Auto Mastery"] = v end
+})
+Tabs.Stats:AddToggle("auto_haki", {
+    Title="Auto Buso Haki", Default=false,
+    Callback=function(v) _G.Settings.Stats["Auto Haki"] = v end
+})
+Tabs.Stats:AddToggle("auto_obs", {
+    Title="Auto Observation (Ken)", Default=false,
+    Callback=function(v) _G.Settings.Stats["Auto Observation"] = v end
+})
+
+-- ══════════════════════════════════════
+--  BOSS TAB
+-- ══════════════════════════════════════
+local bossNames = {}
+for _, b in pairs(BossData) do table.insert(bossNames, b.name) end
+
+Tabs.Boss:AddDropdown("select_boss", {
+    Title="Select Boss", Values=bossNames, Default="Greybeard",
+    Callback=function(v) _G.Settings.Farm["Selected Boss"] = v end
+})
+Tabs.Boss:AddToggle("auto_boss", {
+    Title="Auto Farm Selected Boss", Default=false,
+    Callback=function(v) _G.Settings.Farm["Auto Boss"] = v end
+})
+Tabs.Boss:AddButton({
+    Title="Teleport To Boss Now",
+    Callback=function()
+        local bName = _G.Settings.Farm["Selected Boss"]
+        for _, b in pairs(BossData) do
+            if b.name == bName then tpTo(b.cf, true); break end
+        end
+    end
+})
+
+-- ══════════════════════════════════════
+--  FRUIT TAB
+-- ══════════════════════════════════════
+Tabs.Fruit:AddToggle("fruit_sniper", {
+    Title="Fruit Sniper (Auto TP)", Default=false,
+    Callback=function(v) _G.Settings.Fruit["Fruit Sniper"] = v end
+})
+Tabs.Fruit:AddToggle("auto_store_fruit", {
+    Title="Auto Store Fruit", Default=false,
+    Callback=function(v) _G.Settings.Fruit["Auto Store Fruit"] = v end
+})
+
+-- ══════════════════════════════════════
+--  PLAYER TAB
+-- ══════════════════════════════════════
+Tabs.Player:AddToggle("inf_energy", {
+    Title="Infinite Energy", Default=false,
+    Callback=function(v) _G.Settings.Player["Infinite Energy"] = v end
+})
+Tabs.Player:AddToggle("inf_ability", {
+    Title="Infinite Ability (No Cooldown)", Default=false,
+    Callback=function(v) _G.Settings.Player["Infinite Ability"] = v end
+})
+Tabs.Player:AddToggle("inf_geppo", {
+    Title="Infinite Geppo", Default=false,
+    Callback=function(v) _G.Settings.Player["Infinite Geppo"] = v end
+})
+Tabs.Player:AddToggle("inf_soru", {
+    Title="Infinite Soru", Default=false,
+    Callback=function(v) _G.Settings.Player["Infinite Soru"] = v end
+})
+Tabs.Player:AddToggle("dodge_cd", {
+    Title="Dodge No Cooldown", Default=false,
+    Callback=function(v) _G.Settings.Player["Dodge No Cooldown"] = v end
+})
+Tabs.Player:AddToggle("inf_jump", {
+    Title="Infinite Jump", Default=false,
+    Callback=function(v) _G.Settings.Player["Infinite Jump"] = v end
+})
+Tabs.Player:AddToggle("no_clip", {
+    Title="No Clip", Default=false,
+    Callback=function(v) _G.Settings.Player["No Clip"] = v end
+})
+Tabs.Player:AddSlider("walk_speed", {
+    Title="Walk Speed", Default=16, Min=16, Max=500, Rounding=0,
+    Callback=function(v)
+        _G.Settings.Player["Walk Speed"] = v
+        safe(function() if Hum then Hum.WalkSpeed = v end end)
+    end
+})
+Tabs.Player:AddSlider("jump_power", {
+    Title="Jump Power", Default=50, Min=50, Max=500, Rounding=0,
+    Callback=function(v)
+        _G.Settings.Player["Jump Power"] = v
+        safe(function() if Hum then Hum.JumpPower = v end end)
+    end
+})
+
+-- ══════════════════════════════════════
+--  ESP TAB
+-- ══════════════════════════════════════
+Tabs.ESP:AddToggle("player_esp", {
+    Title="Player ESP", Default=false,
+    Callback=function(v)
+        _G.Settings.ESP["Player ESP"] = v
+        if v then doPlayerESP() else clearESP(ESPBBs.player) end
+    end
+})
+Tabs.ESP:AddToggle("fruit_esp", {
+    Title="Fruit ESP", Default=false,
+    Callback=function(v)
+        _G.Settings.ESP["Fruit ESP"] = v
+        if v then doFruitESP() else clearESP(ESPBBs.fruit) end
+    end
+})
+Tabs.ESP:AddToggle("chest_esp", {
+    Title="Chest ESP", Default=false,
+    Callback=function(v)
+        _G.Settings.ESP["Chest ESP"] = v
+        if v then doChestESP() else clearESP(ESPBBs.chest) end
+    end
+})
+Tabs.ESP:AddToggle("mob_esp", {
+    Title="Mob ESP (workspace.Enemies)", Default=false,
+    Callback=function(v)
+        _G.Settings.ESP["Mob ESP"] = v
+        if v then doMobESP() else clearESP(ESPBBs.mob) end
+    end
+})
+
+-- ══════════════════════════════════════
+--  TELEPORT TAB
+-- ══════════════════════════════════════
+for name, cf in pairs(TpData) do
+    local n, c = name, cf
+    Tabs.Teleport:AddButton({
+        Title = "TP ▶ " .. n,
+        Callback = function()
+            if HRP then tpTo(c * CFrame.new(0,5,0), true) end
+        end
+    })
+end
+
+Tabs.Teleport:AddButton({
+    Title = "TP ▶ Nearest Player",
+    Callback = function()
+        local best, bestD = nil, math.huge
+        for _, p in pairs(Players:GetPlayers()) do
+            safe(function()
+                if p==LP or not p.Character then return end
+                local r = p.Character:FindFirstChild("HumanoidRootPart")
+                if not (r and HRP) then return end
+                local d = (r.Position-HRP.Position).Magnitude
+                if d < bestD then bestD=d; best=r end
+            end)
+        end
+        if best then tpTo(best.CFrame, true) end
+    end
+})
+
+-- ══════════════════════════════════════
+--  MISC TAB
+-- ══════════════════════════════════════
+Tabs.Misc:AddToggle("remove_fog", {
+    Title="Remove Fog", Default=false,
+    Callback=function(v)
+        _G.Settings.Misc["Remove Fog"] = v
+        if v then doRemoveFog() end
+    end
+})
+Tabs.Misc:AddToggle("fps_boost", {
+    Title="FPS Boost", Default=false,
+    Callback=function(v)
+        _G.Settings.Misc["FPS Boost"] = v
+        if v then doFPSBoost() end
+    end
+})
+Tabs.Misc:AddButton({
+    Title="Rejoin Server",
+    Callback=function()
+        safe(function()
+            game:GetService("TeleportService"):Teleport(game.PlaceId, LP)
+        end)
+    end
+})
+Tabs.Misc:AddButton({
+    Title="Copy Server Link",
+    Callback=function()
+        safe(function()
+            setclipboard("roblox://experiences/start?placeId="
+                .. game.PlaceId .. "&gameInstanceId=" .. game.JobId)
+        end)
+    end
+})
+
+-- Save/config manager (Fluent addon)
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+InterfaceManager:SetFolder("BFUltimateHub")
+SaveManager:SetFolder("BFUltimateHub/configs")
+InterfaceManager:BuildInterfaceSection(Tabs.Misc)
+SaveManager:BuildConfigSection(Tabs.Misc)
+
+-- ═══════════════════════════════════════════════════════════════
+--  MAIN HEARTBEAT LOOP
+-- ═══════════════════════════════════════════════════════════════
+local espRefreshTick = 0
+
+RunService.Heartbeat:Connect(function()
+    safe(function()
+        if not refreshChar() then return end
+
+        -- Live status update
+        local data = getQD()
+        statusPara:SetContent(
+            "Phase: " .. farmPhase
+            .. "  |  Kills: " .. farmKills .. "/8"
+            .. "  |  Lv: "    .. getLevel()
+            .. "  |  Target: " .. data[3]
+            .. "  |  " .. seaName
+        )
+
+        local Ss = _G.Settings
+
+        -- Player attributes (real BF names)
+        doPlayerAttrs()
+
+        -- Combat
+        if Ss.Farm["Kill Aura"]         then doKillAura()  end
+        if Ss.Stats["Auto Haki"]         then doAutoHaki()  end
+        if Ss.Stats["Auto Observation"]  then doAutoObs()   end
+        if Ss.Stats["Auto Stats"]        then doAutoStats() end
+
+        -- Boss
+        if Ss.Farm["Auto Boss"] then
+            attackBoss(Ss.Farm["Selected Boss"])
+        end
+
+        -- Sea Beast (workspace.Enemies method)
+        if Ss.Farm["Auto Sea Beast"] then
+            safe(function()
+                local folder = workspace:FindFirstChild("Enemies")
+                if not folder then return end
+                for _, v in pairs(folder:GetChildren()) do
+                    if v.Name:find("Sea Beast")  or
+                       v.Name:find("Terrorshark") or
+                       v.Name:find("Leviathan") then
+                        local h = v:FindFirstChild("Humanoid")
+                        local r = v:FindFirstChild("HumanoidRootPart")
+                        if h and h.Health > 0 and r then
+                            if (r.Position-HRP.Position).Magnitude > 15 then
+                                tpTo(r.CFrame * CFrame.new(0,0,-15), true)
+                            end
+                            doAttack()
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Elite Hunter
+        if Ss.Farm["Auto Elite Hunter"] then
+            safe(function()
+                local folder = workspace:FindFirstChild("Enemies")
+                if not folder then return end
+                for _, v in pairs(folder:GetChildren()) do
+                    if v.Name:find("Elite") then
+                        local h = v:FindFirstChild("Humanoid")
+                        local r = v:FindFirstChild("HumanoidRootPart")
+                        if h and h.Health > 0 and r then
+                            tpTo(r.CFrame * CFrame.new(0,0,-8), true)
+                            doAttack()
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Collect Chest
+        if Ss.Farm["Auto Collect Chest"] then
+            safe(function()
+                for _, m in pairs(workspace:GetDescendants()) do
+                    if m:IsA("Model") and
+                    (m.Name:lower():find("chest") or m.Name:lower():find("treasure")) then
+                        local part = m.PrimaryPart or m:FindFirstChildOfClass("Part")
+                        if part and HRP and
+                        (part.Position-HRP.Position).Magnitude < 600 then
+                            tpTo(part.CFrame, true)
+                            task.wait(0.3)
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Bounty
+        if Ss.Farm["Auto Bounty"] then
+            safe(function()
+                local best, bestB, bestR = nil, 0, nil
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p==LP or not p.Character then continue end
+                    local ls = p:FindFirstChild("leaderstats")
+                    if not ls then continue end
+                    local bv = ls:FindFirstChild("Bounty") or ls:FindFirstChild("Beli")
+                    local val = bv and bv.Value or 0
+                    local r = p.Character:FindFirstChild("HumanoidRootPart")
+                    if r and val > bestB then bestB=val; best=p; bestR=r end
+                end
+                if bestR then tpTo(bestR.CFrame, true); doAttack() end
+            end)
+        end
+
+        -- Fruit
+        if Ss.Fruit["Fruit Sniper"]    then doFruitSniper() end
+
+        -- No Clip
+        if Ss.Player["No Clip"] then doNoClip() end
+
+        -- One-time misc
+        if Ss.Misc["Remove Fog"] then doRemoveFog() end
+        if Ss.Misc["FPS Boost"]  then doFPSBoost()  end
+
+        -- ESP refresh every 3 seconds
+        if tick() - espRefreshTick > 3 then
+            espRefreshTick = tick()
+            if Ss.ESP["Fruit ESP"]  then doFruitESP()  end
+            if Ss.ESP["Player ESP"] then doPlayerESP() end
+            if Ss.ESP["Chest ESP"]  then doChestESP()  end
+            if Ss.ESP["Mob ESP"]    then doMobESP()     end
+        end
+    end)
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+--  RESPAWN HANDLER
+-- ═══════════════════════════════════════════════════════════════
+LP.CharacterAdded:Connect(function(c)
+    Char = c
+    Hum  = c:WaitForChild("Humanoid")
+    HRP  = c:WaitForChild("HumanoidRootPart")
+    AntiBan()  -- Re-run antiban on respawn
+    if _G.Settings.Farm["Auto Farm"] then
+        task.wait(2.5)
+        farmPhase = "GET_QUEST"; farmKills = 0; lastEnemyHP = 0
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+--  DONE
+-- ═══════════════════════════════════════════════════════════════
+Window:SelectTab(1)
+Fluent:Notify({
+    Title   = "BF Ultimate Hub",
+    Content = "Loaded!  " .. seaName .. "  |  Lv " .. getLevel(),
+    Duration = 5
+})
+
+print("╔══════════════════════════════════════════╗")
+print("║       BF Ultimate Hub - Clean Final      ║")
+print("║  Sea: " .. seaName .. string.rep(" ", 35-#seaName) .. "║")
+print("║  Level: " .. getLevel() .. string.rep(" ", 33-#tostring(getLevel())) .. "║")
+print("║  Webhook logger: REMOVED ✓               ║")
+print("╚══════════════════════════════════════════╝")
